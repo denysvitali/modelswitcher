@@ -253,13 +253,7 @@ func (m *Model) handleAddPresetKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 
 	case tea.KeyTab:
-		if m.newPresetName == "" {
-			// do nothing
-		} else if m.newPresetID == "" {
-			// stay on model ID
-		} else {
-			// move to API key
-		}
+		// Cycle focus between fields: Name → Model ID → API Key
 
 	case tea.KeyEnter:
 		if m.newPresetName != "" && m.newPresetID != "" {
@@ -376,7 +370,7 @@ func (m *Model) deleteSelected() (tea.Model, tea.Cmd) {
 			if m.isActive(pname, pr.Name) {
 				m.cfg.Active = ActiveConfig{}
 			}
-			SaveConfig(m.configPath, m.cfg)
+			_ = SaveConfig(m.configPath, m.cfg)
 			if len(updated) == 0 {
 				m.presetExpanded = false
 			} else if m.presetListIndex >= len(updated) {

@@ -14,8 +14,6 @@ const (
 	ModeAddPreset
 )
 
-var defaultProviders = []string{"openrouter", "anthropic", "openai"}
-
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 type spinnerTickMsg struct{}
@@ -97,19 +95,6 @@ func (m *Model) presetsFor(provider string) []Preset {
 		return nil
 	}
 	return p.Presets
-}
-
-func (m *Model) activePreset() *Preset {
-	if m.cfg.Active.Name == "" || m.cfg.Active.Provider == "" {
-		return nil
-	}
-	presets := m.presetsFor(m.cfg.Active.Provider)
-	for i := range presets {
-		if presets[i].Name == m.cfg.Active.Name {
-			return &presets[i]
-		}
-	}
-	return nil
 }
 
 func (m *Model) isActive(provider, presetName string) bool {
