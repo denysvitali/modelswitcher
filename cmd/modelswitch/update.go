@@ -379,12 +379,12 @@ func (m *Model) deleteSelected() (tea.Model, tea.Cmd) {
 		}
 	} else {
 		pname := providers[m.providerListIndex]
-		KeyringDelete(pname)
+		_ = KeyringDelete(pname)
 		delete(m.cfg.Provider, pname)
 		if m.cfg.Active.Provider == pname {
 			m.cfg.Active = ActiveConfig{}
 		}
-		SaveConfig(m.configPath, m.cfg)
+		_ = SaveConfig(m.configPath, m.cfg)
 		if len(providers) > 0 {
 			m.providerListIndex = 0
 		}
