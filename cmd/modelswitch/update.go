@@ -158,10 +158,7 @@ func (m *Model) enterOpenRouterBrowse(provider string) (tea.Model, tea.Cmd) {
 	m.fetchError = ""
 
 	fetcher := NewFetcher()
-	apiKey := ""
-	if p, ok := m.cfg.Provider[provider]; ok {
-		apiKey = p.APIKey
-	}
+	apiKey, _ := ResolveAPIKey(provider, m.cfg.Provider[provider])
 
 	return m, fetchModelsCmd(fetcher, apiKey)
 }
@@ -230,10 +227,7 @@ func (m *Model) handleOpenRouterBrowseKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.fetching = true
 			m.fetchError = ""
 			fetcher := NewFetcher()
-			apiKey := ""
-			if p, ok := m.cfg.Provider[m.selectedProvider]; ok {
-				apiKey = p.APIKey
-			}
+			apiKey, _ := ResolveAPIKey(m.selectedProvider, m.cfg.Provider[m.selectedProvider])
 			return m, fetchModelsCmd(fetcher, apiKey)
 		case '/':
 			m.searchMode = true
@@ -280,7 +274,11 @@ func (m *Model) handleAddPresetKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			p := m.cfg.Provider[provider]
 			if m.newPresetKey != "" {
-				p.APIKey = m.newPresetKey
+				if err := KeyringSet(provider, m.newPresetKey); err != nil {
+					m.fetchError = "failed to store key in keychain: " + err.Error()
+					return m, nil
+				}
+				p.UseKeyring = true
 			}
 			p.Presets = append(p.Presets, preset)
 			m.cfg.Provider[provider] = p
@@ -387,6 +385,7 @@ func (m *Model) deleteSelected() (tea.Model, tea.Cmd) {
 		}
 	} else {
 		pname := providers[m.providerListIndex]
+		KeyringDelete(pname)
 		delete(m.cfg.Provider, pname)
 		if m.cfg.Active.Provider == pname {
 			m.cfg.Active = ActiveConfig{}

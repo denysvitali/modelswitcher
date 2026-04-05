@@ -17,6 +17,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Migrate any plaintext API keys to system keyring
+	if err := MigratePlaintextKeys(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: keyring migration skipped: %v\n", err)
+	}
+
 	model := NewModel(cfg, configPath, activeEnvPath)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 

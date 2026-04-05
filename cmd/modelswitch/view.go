@@ -279,11 +279,11 @@ func (m *Model) viewAddPreset() string {
 	}{
 		{"Preset Name", m.newPresetName, 30, m.newPresetID == ""},
 		{"Model ID", m.newPresetID, 50, m.newPresetID != "" && m.newPresetKey == ""},
-		{"API Key", m.newPresetKey, 40, m.newPresetKey != ""},
+		{"API Key (keychain)", m.newPresetKey, 40, m.newPresetKey != ""},
 	}
 
 	for i, f := range fields {
-		prefix := fmt.Sprintf("  %d. %-12s ", i+1, f.label+":")
+		prefix := fmt.Sprintf("  %d. %-18s ", i+1, f.label+":")
 		if f.value == "" {
 			b.WriteString(dimStyle.Render(prefix + "(required)"))
 		} else {
@@ -291,7 +291,11 @@ func (m *Model) viewAddPreset() string {
 			if f.isCursor {
 				style = selectedStyle
 			}
-			b.WriteString(style.Render(prefix + f.value + "_"))
+			display := f.value
+			if i == 2 { // API Key field — mask it
+				display = strings.Repeat("*", len(f.value))
+			}
+			b.WriteString(style.Render(prefix + display + "_"))
 		}
 		b.WriteString("\n")
 	}
