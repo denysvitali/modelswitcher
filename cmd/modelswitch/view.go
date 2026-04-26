@@ -9,156 +9,146 @@ import (
 
 var (
 	titleStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("86")).
-			Bold(true).
-			Padding(0, 0, 1, 0)
+			Foreground(lipgloss.Color("99")).
+			Bold(true)
 
 	selectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("212")).
-			Background(lipgloss.Color("236")).
-			Padding(0, 1, 0, 0).
-			Margin(0, 0)
+			Foreground(lipgloss.Color("255")).
+			Background(lipgloss.Color("63"))
 
 	activeDotStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("82")).
 			Bold(true)
 
 	normalStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245"))
+			Foreground(lipgloss.Color("247"))
 
 	dimStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("240"))
 
 	descStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
-			Padding(0, 0, 0, 2)
-
-	headerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
-			Padding(1, 0, 0, 0)
+			Foreground(lipgloss.Color("240"))
 
 	errStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196")).
-			Padding(1, 0, 0, 0)
+			Foreground(lipgloss.Color("196"))
 
 	searchStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("86")).
-			Background(lipgloss.Color("235")).
-			Padding(0, 1, 0, 1).
-			Margin(1, 0, 1, 0)
+			Foreground(lipgloss.Color("255")).
+			Background(lipgloss.Color("238"))
 
 	footerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
-			Padding(1, 0, 0, 0)
+			Foreground(lipgloss.Color("240"))
 
 	inputStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("86")).
-			Background(lipgloss.Color("235")).
-			Padding(0, 1, 0, 1)
+			Foreground(lipgloss.Color("255")).
+			Background(lipgloss.Color("238"))
 
 	doneStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("82")).
-			Bold(true).
-			Padding(1, 0, 0, 0)
+			Bold(true)
 )
 
 func (m *Model) viewProviderSelect() string {
 	var b strings.Builder
 
 	b.WriteString(titleStyle.Render("modelswitch"))
-	b.WriteString(headerStyle.Render("Select a provider or preset:"))
+	b.WriteString("\n\n")
+	b.WriteString("Select a provider or preset:\n")
 
-	providers := m.providers()
-	providerNames := []string{"openrouter", "anthropic", "openai"}
-
-	// Build ordered list
-	ordered := []string{}
-	seen := make(map[string]bool)
-	for _, name := range providerNames {
-		if _, ok := m.cfg.Provider[name]; ok && !seen[name] {
-			ordered = append(ordered, name)
-			seen[name] = true
-		}
-	}
-	for _, name := range providers {
-		if !seen[name] {
-			ordered = append(ordered, name)
-			seen[name] = true
-		}
-	}
-
-	// Default providers if none configured
-	if len(ordered) == 0 {
-		ordered = []string{"openrouter", "anthropic", "openai"}
-	}
+	providers := m.allProviderList()
 
 	hasPresets := false
-	for _, pname := range ordered {
+	for _, pname := range providers {
 		if _, ok := m.cfg.Provider[pname]; ok && len(m.presetsFor(pname)) > 0 {
 			hasPresets = true
 			break
 		}
 	}
 
-	// Print providers
-	for i, pname := range ordered {
-		isSelected := i == m.providerListIndex && !m.presetExpanded
-		prefix := "  "
-		style := normalStyle
-		if isSelected {
-			prefix = "▸ "
-			style = selectedStyle
-		}
+	for i, pname := range providers {
+		isCurrent := i == m.providerListIndex
+		isSelected := isCurrent && !m.presetExpanded
+		isExpanded := isCurrent && m.presetExpanded
+		_, isConfigured := m.cfg.Provider[pname]
 
-		hasConfiguredPresets := false
 		presets := m.presetsFor(pname)
-		if len(presets) > 0 {
-			hasConfiguredPresets = true
+		hasPresetsForProvider := len(presets) > 0
+
+		displayName := ""
+		if info, ok := ProviderInfoFor(pname); ok {
+			displayName = info.DisplayName
+		} else {
+			displayName = strings.ToUpper(pname[:1]) + pname[1:]
 		}
 
-		// Show active dot for active preset
-		activePrefix := ""
-		if hasConfiguredPresets {
+		base := "  " + displayName
+		line := ""
+		if isSelected {
+			base = "› " + displayName
+			line = selectedStyle.Render(base)
+		} else if isExpanded {
+			line = dimStyle.Render(base)
+		} else if !isConfigured {
+			line = dimStyle.Render(base)
+		} else {
+			line = normalStyle.Render(base)
+		}
+
+		if hasPresetsForProvider {
+			line += dimStyle.Render(" ▾")
+		} else if isSelected && !isConfigured {
+			line += dimStyle.Render(" [press a]")
+		}
+
+		if hasPresetsForProvider {
 			for _, pr := range presets {
 				if m.isActive(pname, pr.Name) {
-					activePrefix = activeDotStyle.Render("●") + " "
+					b.WriteString(activeDotStyle.Render("●") + " ")
 					break
 				}
 			}
 		}
 
-		line := style.Render(prefix + strings.ToUpper(pname[:1]) + pname[1:])
-		if hasConfiguredPresets {
-			line += dimStyle.Render(" ▶")
-		}
-		if activePrefix != "" {
-			b.WriteString(activePrefix)
-		}
 		b.WriteString(line + "\n")
 
-		// Expanded presets
-		if isSelected && hasConfiguredPresets && m.presetExpanded {
+		if isExpanded && hasPresetsForProvider {
 			for j, pr := range presets {
 				pIsSelected := j == m.presetListIndex
-				ppfx := "    "
-				pstyle := dimStyle
+				pBase := "    "
 				if pIsSelected {
-					ppfx = "  ▸ "
-					pstyle = selectedStyle
+					pBase = "  › "
 				}
-				dot := "  "
+
+				var pLine string
+				if pIsSelected {
+					pLine = selectedStyle.Render(pBase + pr.Name)
+				} else {
+					pLine = dimStyle.Render(pBase + pr.Name)
+				}
+
 				if m.isActive(pname, pr.Name) {
-					dot = activeDotStyle.Render("●") + " "
+					b.WriteString(activeDotStyle.Render("●") + " ")
+				} else {
+					b.WriteString("  ")
 				}
-				b.WriteString(dot + pstyle.Render(ppfx+pr.Name) + "\n")
-				if pIsSelected && pr.ModelName != "" {
-					b.WriteString(descStyle.Render(pr.ModelName))
+
+				b.WriteString(pLine + "\n")
+
+				if pIsSelected && (pr.ModelDesc != "" || (pr.ModelName != "" && pr.ModelName != pr.Name)) {
+					if pr.ModelName != "" && pr.ModelName != pr.Name {
+						b.WriteString("     " + descStyle.Render(pr.ModelName))
+					}
 					if pr.ModelDesc != "" {
-						desc := pr.ModelDesc
-						if len(desc) > 60 {
-							desc = desc[:60] + "…"
+						descText := pr.ModelDesc
+						if len(descText) > 60 {
+							descText = descText[:60] + "…"
 						}
-						b.WriteString(descStyle.Render("    "+desc))
+						if pr.ModelName != "" && pr.ModelName != pr.Name {
+							b.WriteString("    ")
+						} else {
+							b.WriteString("     ")
+						}
+						b.WriteString(descStyle.Render(descText))
 					}
 					b.WriteString("\n")
 				}
@@ -167,13 +157,14 @@ func (m *Model) viewProviderSelect() string {
 	}
 
 	if !hasPresets {
-		b.WriteString(dimStyle.Render("\n  (no presets saved yet — select a provider first)\n"))
+		b.WriteString(dimStyle.Render("  (no presets saved yet)\n"))
 	}
 
 	footer := "↑↓ navigate  → expand  Enter select  a add preset  d delete  q quit"
 	if m.presetExpanded {
 		footer = "↑↓ navigate  Enter select preset  q back"
 	}
+	b.WriteString("\n")
 	b.WriteString(footerStyle.Render(footer))
 
 	return b.String()
@@ -183,32 +174,27 @@ func (m *Model) viewOpenRouterBrowse() string {
 	var b strings.Builder
 
 	b.WriteString(titleStyle.Render("modelswitch — OpenRouter Models"))
-	b.WriteString(headerStyle.Render("Live model list from openrouter.ai"))
+	b.WriteString("\n\n")
+	b.WriteString("Live model list from openrouter.ai\n")
 
 	if m.fetching {
 		frame := spinnerFrames[m.spinnerFrame]
-		b.WriteString(searchStyle.Render(frame + " Fetching models..."))
+		b.WriteString("  " + frame + " Fetching models...\n")
 	} else if m.fetchError != "" {
-		b.WriteString(errStyle.Render("✘ "+m.fetchError))
-		b.WriteString(dimStyle.Render("Press r to retry"))
+		b.WriteString(errStyle.Render("✘ Error: "+m.fetchError) + "\n")
+		b.WriteString(dimStyle.Render("  press r to retry\n"))
 	} else {
-		// Search bar
 		placeholder := "/ search models..."
 		if m.searchQuery != "" {
 			placeholder = m.searchQuery
 		}
-		searchBar := fmt.Sprintf(" %s ", placeholder)
-		b.WriteString(searchStyle.Render(searchBar))
+		b.WriteString("  " + searchStyle.Render(" "+placeholder+" ") + "\n")
 
-		// Model count
 		count := len(m.filteredModels)
 		if m.searchQuery != "" {
-			b.WriteString(dimStyle.Render(fmt.Sprintf("  %d models matching", count)))
+			b.WriteString(dimStyle.Render(fmt.Sprintf("  %d models matching", count)) + "\n")
 		}
 
-		b.WriteString("\n")
-
-		// Show models (limited to visible area)
 		maxVisible := 15
 		start := m.modelIndex - maxVisible/2
 		if start < 0 {
@@ -226,10 +212,8 @@ func (m *Model) viewOpenRouterBrowse() string {
 			mod := m.filteredModels[i]
 			isSelected := i == m.modelIndex
 			pfx := "  "
-			style := normalStyle
 			if isSelected {
-				pfx = "▸ "
-				style = selectedStyle
+				pfx = "› "
 			}
 
 			nameDisplay := mod.Name
@@ -240,7 +224,12 @@ func (m *Model) viewOpenRouterBrowse() string {
 				nameDisplay = strings.ToUpper(nameDisplay[:1]) + nameDisplay[1:]
 			}
 
-			b.WriteString(style.Render(pfx + nameDisplay))
+			line := pfx + nameDisplay
+			if isSelected {
+				b.WriteString(selectedStyle.Render(line))
+			} else {
+				b.WriteString(normalStyle.Render(line))
+			}
 			b.WriteString(dimStyle.Render("  " + mod.ID))
 			b.WriteString("\n")
 
@@ -249,17 +238,17 @@ func (m *Model) viewOpenRouterBrowse() string {
 				if len(desc) > 80 {
 					desc = desc[:80] + "…"
 				}
-				b.WriteString(descStyle.Render(desc))
-				b.WriteString("\n")
+				b.WriteString("   " + descStyle.Render(desc) + "\n")
 			}
 		}
 
 		if count == 0 && m.searchQuery != "" {
-			b.WriteString(dimStyle.Render("  no models match your search"))
+			b.WriteString(dimStyle.Render("  no models match your search\n"))
 		}
 	}
 
-	b.WriteString(footerStyle.Render("↑↓ navigate  Enter select model  / search  q back"))
+	b.WriteString("\n")
+	b.WriteString(footerStyle.Render("↑↓ navigate  Enter select model  / search  r refresh  Esc back"))
 
 	return b.String()
 }
@@ -268,37 +257,37 @@ func (m *Model) viewAddPreset() string {
 	var b strings.Builder
 
 	b.WriteString(titleStyle.Render("modelswitch — Add New Preset"))
-	b.WriteString(headerStyle.Render("Create a new preset"))
+	b.WriteString("\n\n")
+	b.WriteString("Create a new preset\n")
 	b.WriteString("\n")
 
 	fields := []struct {
 		label    string
 		value    string
-		maxLen   int
 		isCursor bool
 	}{
-		{"Preset Name", m.newPresetName, 30, m.newPresetID == ""},
-		{"Model ID", m.newPresetID, 50, m.newPresetID != "" && m.newPresetKey == ""},
-		{"API Key (keychain)", m.newPresetKey, 40, m.newPresetKey != ""},
+		{"Preset Name", m.newPresetName, m.focusedField == 0},
+		{"Model ID", m.newPresetID, m.focusedField == 1},
+		{"API Key", m.newPresetKey, m.focusedField == 2},
 	}
 
-	for i, f := range fields {
-		prefix := fmt.Sprintf("  %d. %-18s ", i+1, f.label+":")
-		if f.value == "" {
-			b.WriteString(dimStyle.Render(prefix + "(required)"))
-		} else {
-			style := inputStyle
-			if f.isCursor {
-				style = selectedStyle
-			}
+		for i, f := range fields {
+			label := fmt.Sprintf("  %d. %s: ", i+1, f.label)
 			display := f.value
-			if i == 2 { // API Key field — mask it
+			if i == 2 && display != "" {
 				display = strings.Repeat("*", len(f.value))
 			}
-			b.WriteString(style.Render(prefix + display + "_"))
+			if display == "" {
+				display = "(required)"
+			}
+			cursor := "_"
+			rendered := label + display + cursor
+			if f.isCursor {
+				b.WriteString(selectedStyle.Render(rendered) + "\n")
+			} else {
+				b.WriteString(normalStyle.Render(rendered) + "\n")
+			}
 		}
-		b.WriteString("\n")
-	}
 
 	b.WriteString("\n")
 	b.WriteString(footerStyle.Render("Tab next field  Enter save  Esc cancel"))
@@ -308,7 +297,7 @@ func (m *Model) viewAddPreset() string {
 
 func (m *Model) View() string {
 	if m.doneMessage != "" {
-		return doneStyle.Render(m.doneMessage)
+		return "\n" + doneStyle.Render(m.doneMessage) + "\n"
 	}
 
 	switch m.mode {

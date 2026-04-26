@@ -51,6 +51,7 @@ type Model struct {
 	newPresetName string
 	newPresetID   string
 	newPresetKey  string
+	focusedField   int // 0=name, 1=modelID, 2=apiKey
 
 	// General
 	quitting    bool
@@ -65,6 +66,7 @@ func NewModel(cfg *Config, configPath, activeEnvPath string) *Model {
 		mode:          ModeProviderSelect,
 		providerListIndex: 0,
 		presetListIndex: 0,
+		focusedField: 0,
 	}
 }
 
@@ -78,6 +80,7 @@ func (m *Model) setMode(mode int) {
 	m.fetching = false
 	m.presetExpanded = false
 	m.presetListIndex = 0
+	m.focusedField = 0
 }
 
 func (m *Model) providers() []string {
@@ -123,3 +126,26 @@ func (m *Model) updateFiltered() {
 }
 
 func (m *Model) Init() tea.Cmd { return nil }
+
+// allProviderList returns the full ordered list of providers: known providers
+// first (in a fixed order), then any custom providers from config.
+func (m *Model) allProviderList() []string {
+	var ordered []string
+	seen := make(map[string]bool)
+
+	for _, info := range KnownProviders() {
+		if !seen[info.Name] {
+			ordered = append(ordered, info.Name)
+			seen[info.Name] = true
+		}
+	}
+
+	for name := range m.cfg.Provider {
+		if !seen[name] {
+			ordered = append(ordered, name)
+			seen[name] = true
+		}
+	}
+
+	return ordered
+}

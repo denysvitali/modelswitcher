@@ -79,8 +79,8 @@ func (m *Model) handleProviderSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.presetListIndex++
 			}
 		} else {
-			providers := m.providers()
-			if m.providerListIndex < len(providers)-1 {
+			allProviders := m.allProviderList()
+			if m.providerListIndex < len(allProviders)-1 {
 				m.providerListIndex++
 			}
 		}
@@ -98,20 +98,25 @@ func (m *Model) handleProviderSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 		// Expand provider or enter browser
-		providers := m.providers()
-		if m.providerListIndex >= len(providers) {
+		allProviders := m.allProviderList()
+		if m.providerListIndex >= len(allProviders) {
 			return m, nil
 		}
-		pname := providers[m.providerListIndex]
+		pname := allProviders[m.providerListIndex]
 		presets := m.presetsFor(pname)
 
 		if len(presets) > 0 {
 			m.presetExpanded = true
 			m.expandedProvider = pname
 			m.presetListIndex = 0
-		} else {
-			// Enter browser mode
+		} else if info, ok := ProviderInfoFor(pname); ok && info.SupportsBrowse {
 			return m.enterOpenRouterBrowse(pname)
+		} else {
+			m.selectedProvider = pname
+			m.newPresetName = ""
+			m.newPresetID = ""
+			m.newPresetKey = ""
+			m.setMode(ModeAddPreset)
 		}
 
 	case tea.KeyLeft:
@@ -126,9 +131,9 @@ func (m *Model) handleProviderSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if msg.Type == tea.KeyRunes && msg.Runes[0] == 'a' {
 			// Add preset — go to add mode for selected provider
-			providers := m.providers()
-			if m.providerListIndex < len(providers) {
-				m.selectedProvider = providers[m.providerListIndex]
+			allProviders := m.allProviderList()
+			if m.providerListIndex < len(allProviders) {
+				m.selectedProvider = allProviders[m.providerListIndex]
 			}
 			m.newPresetName = ""
 			m.newPresetID = ""
@@ -141,9 +146,9 @@ func (m *Model) handleProviderSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if msg.Type == tea.KeyRunes && msg.Runes[0] == 'r' {
 			// Refresh browser
-			providers := m.providers()
-			if m.providerListIndex < len(providers) {
-				return m.enterOpenRouterBrowse(providers[m.providerListIndex])
+			allProviders := m.allProviderList()
+			if m.providerListIndex < len(allProviders) {
+				if info, ok := ProviderInfoFor(allProviders[m.providerListIndex]); ok && info.SupportsBrowse { return m.enterOpenRouterBrowse(allProviders[m.providerListIndex]) }
 			}
 		}
 	}
@@ -160,7 +165,7 @@ func (m *Model) enterOpenRouterBrowse(provider string) (tea.Model, tea.Cmd) {
 	fetcher := NewFetcher()
 	apiKey, _ := ResolveAPIKey(provider, m.cfg.Provider[provider])
 
-	return m, fetchModelsCmd(fetcher, apiKey)
+	return m, tea.Batch(spinnerCmd(), fetchModelsCmd(fetcher, apiKey))
 }
 
 // ─── OpenRouter Browse ───────────────────────────────────────────────────────
@@ -168,7 +173,7 @@ func (m *Model) enterOpenRouterBrowse(provider string) (tea.Model, tea.Cmd) {
 func (m *Model) handleOpenRouterBrowseKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// In search mode, only Esc/Backspace/Enter/arrows work; everything else types
 	if m.searchMode && msg.Type == tea.KeyRunes {
-		m.searchQuery += string(msg.Runes[0])
+		m.searchQuery += string(msg.Runes)
 		m.updateFiltered()
 		return m, nil
 	}
@@ -228,18 +233,21 @@ func (m *Model) handleOpenRouterBrowseKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.fetchError = ""
 			fetcher := NewFetcher()
 			apiKey, _ := ResolveAPIKey(m.selectedProvider, m.cfg.Provider[m.selectedProvider])
-			return m, fetchModelsCmd(fetcher, apiKey)
+			return m, tea.Batch(spinnerCmd(), fetchModelsCmd(fetcher, apiKey))
 		case '/':
 			m.searchMode = true
 			return m, nil
 		default:
-			m.searchQuery += string(msg.Runes[0])
+			m.searchQuery += string(msg.Runes)
 			m.updateFiltered()
 		}
 
 	case tea.KeyBackspace:
 		if len(m.searchQuery) > 0 {
 			m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+			m.updateFiltered()
+		} else if m.searchMode {
+			m.searchMode = false
 			m.updateFiltered()
 		}
 	}
@@ -253,7 +261,17 @@ func (m *Model) handleAddPresetKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 
 	case tea.KeyTab:
-		// Cycle focus between fields: Name → Model ID → API Key
+		m.focusedField = (m.focusedField + 1) % 3
+
+	case tea.KeyUp:
+		if m.focusedField > 0 {
+			m.focusedField--
+		}
+
+	case tea.KeyDown:
+		if m.focusedField < 2 {
+			m.focusedField++
+		}
 
 	case tea.KeyEnter:
 		if m.newPresetName != "" && m.newPresetID != "" {
@@ -285,26 +303,32 @@ func (m *Model) handleAddPresetKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEsc:
 		m.setMode(ModeProviderSelect)
 
-	case tea.KeyRunes:
-		if m.newPresetName == "" {
-			m.newPresetName = string(msg.Runes[0])
-		} else if m.newPresetID == "" {
-			m.newPresetID += string(msg.Runes[0])
-		} else {
-			m.newPresetKey += string(msg.Runes[0])
-		}
+		case tea.KeyRunes:
+			text := string(msg.Runes)
+			switch m.focusedField {
+			case 0:
+				m.newPresetName += text
+			case 1:
+				m.newPresetID += text
+			case 2:
+				m.newPresetKey += text
+			}
 
 	case tea.KeyBackspace:
-		if m.newPresetKey != "" {
-			m.newPresetKey = m.newPresetKey[:len(m.newPresetKey)-1]
-		} else if m.newPresetID != "" {
-			m.newPresetID = m.newPresetID[:len(m.newPresetID)-1]
-		} else if m.newPresetName != "" {
-			m.newPresetName = m.newPresetName[:len(m.newPresetName)-1]
+		switch m.focusedField {
+		case 0:
+			if len(m.newPresetName) > 0 {
+				m.newPresetName = m.newPresetName[:len(m.newPresetName)-1]
+			}
+		case 1:
+			if len(m.newPresetID) > 0 {
+				m.newPresetID = m.newPresetID[:len(m.newPresetID)-1]
+			}
+		case 2:
+			if len(m.newPresetKey) > 0 {
+				m.newPresetKey = m.newPresetKey[:len(m.newPresetKey)-1]
+			}
 		}
-
-	case tea.KeyUp, tea.KeyDown:
-		// Move between fields
 	}
 
 	return m, nil
@@ -351,8 +375,8 @@ func (m *Model) activatePreset(provider string, preset *Preset) (tea.Model, tea.
 }
 
 func (m *Model) deleteSelected() (tea.Model, tea.Cmd) {
-	providers := m.providers()
-	if m.providerListIndex >= len(providers) {
+	allProviders := m.allProviderList()
+	if m.providerListIndex >= len(allProviders) {
 		return m, nil
 	}
 
@@ -378,14 +402,14 @@ func (m *Model) deleteSelected() (tea.Model, tea.Cmd) {
 			}
 		}
 	} else {
-		pname := providers[m.providerListIndex]
+		pname := allProviders[m.providerListIndex]
 		_ = KeyringDelete(pname)
 		delete(m.cfg.Provider, pname)
 		if m.cfg.Active.Provider == pname {
 			m.cfg.Active = ActiveConfig{}
 		}
 		_ = SaveConfig(m.configPath, m.cfg)
-		if len(providers) > 0 {
+		if len(allProviders) > 0 {
 			m.providerListIndex = 0
 		}
 	}
